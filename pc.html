@@ -1551,7 +1551,7 @@ var DGUARD=(function(){
 </script>
 <script>
 /* 옛 가락 — Web Audio로 그 자리에서 짓는 배경음. 평조(황·태·중·임·남), 굿거리 장단.
-   가야금(뜯는 현, 꺾는 소리·농현) · 대금(숨 섞인 긴 소리, 떠는 소리) · 장구 · 징 · 낮은 아쟁 지속음.
+   가야금(뜯는 현, 앞꾸밈음·얕은 농현) · 대금(숨 섞인 긴 소리) · 장구 · 징 · 낮은 아쟁 지속음.
    여덟 장단이 한 바퀴: 1바퀴 가야금 가락 → 2바퀴 대금 가락 + 가야금 받침 → 3바퀴 둘이 함께(가야금 한 옥타브 위 변주) */
 var DBGM=(function(){
   var ctx,master,rev,on=false,timer,bar=0,next=0,KS={},dr=null;
@@ -1579,16 +1579,13 @@ var DBGM=(function(){
   function gayageum(st,t,dur,vel,orn){var s=ctx.createBufferSource();s.buffer=ks(st);var g=ctx.createGain(),lp=ctx.createBiquadFilter();lp.type="lowpass";lp.frequency.value=3200;
     g.gain.setValueAtTime(vel,t);g.gain.setTargetAtTime(0,t+dur*1.4,.35);s.connect(lp);lp.connect(g);g.connect(master);g.connect(rev);
     var pr=s.playbackRate;pr.setValueAtTime(1,t);
-    if(orn==="k"){pr.setValueAtTime(1,t+dur*.45);pr.linearRampToValueAtTime(1.06,t+dur*.6);pr.linearRampToValueAtTime(.985,t+dur*.85);}       // 꺾는 소리: 눌러 올렸다 떨어뜨림
-    else if(orn==="n"){var n=Math.max(2,Math.floor(dur/0.32)),c=new Float32Array(n*8);for(var i=0;i<c.length;i++){var a=i/c.length;c[i]=1+Math.sin(a*n*2*Math.PI)*.012*a;}pr.setValueCurveAtTime(c,t+dur*.3,dur*.7);} // 농현: 갈수록 깊게
+    if(orn==="n"&&dur>1.5){var n=Math.max(2,Math.floor(dur*.5/0.2)),c=new Float32Array(n*16);for(var i=0;i<c.length;i++){var a=i/c.length;c[i]=1+Math.sin(a*n*2*Math.PI)*.0045*Math.min(1,a*3);}pr.setValueCurveAtTime(c,t+dur*.5,dur*.5);} // 농현: 얕고 고르게(음 높이는 늘 제자리로)
     s.start(t);s.stop(t+dur*1.4+2);}
   // 대금: 숨 섞인 긴 소리, 뒤로 갈수록 떤다
   function daegeum(st,t,dur,vel,orn){var f=hz(st),o=ctx.createOscillator(),o2=ctx.createOscillator(),g=ctx.createGain(),g2=ctx.createGain();o.type="sine";o2.type="triangle";o.frequency.value=f;o2.frequency.value=f*2;g2.gain.value=.12;
     var nb=ctx.createBuffer(1,ctx.sampleRate*2,ctx.sampleRate),nd=nb.getChannelData(0);for(var i=0;i<nd.length;i++)nd[i]=Math.random()*2-1;
     var ns=ctx.createBufferSource();ns.buffer=nb;ns.loop=true;var bp=ctx.createBiquadFilter();bp.type="bandpass";bp.frequency.value=f*2;bp.Q.value=6;var ng=ctx.createGain();ng.gain.value=.16;
-    var lfo=ctx.createOscillator(),lg=ctx.createGain();lfo.frequency.value=5.2;lg.gain.setValueAtTime(0,t);lg.gain.linearRampToValueAtTime(0,t+dur*.4);lg.gain.linearRampToValueAtTime(f*(orn==="n"?.018:.008),t+dur);lfo.connect(lg);lg.connect(o.frequency);lg.connect(o2.frequency);
-    if(orn==="k"){o.frequency.setValueAtTime(f,t+dur*.55);o.frequency.linearRampToValueAtTime(f*1.06,t+dur*.68);o.frequency.linearRampToValueAtTime(f*.99,t+dur*.85);}
-    else{o.frequency.setValueAtTime(f*.97,t);o.frequency.linearRampToValueAtTime(f,t+.12);}   // 밀어 올리며 들어감
+    var lfo=ctx.createOscillator(),lg=ctx.createGain();lfo.frequency.value=5.2;lg.gain.setValueAtTime(0,t);lg.gain.linearRampToValueAtTime(0,t+dur*.4);lg.gain.linearRampToValueAtTime(f*(orn==="n"?.006:.003),t+dur);lfo.connect(lg);lg.connect(o.frequency);lg.connect(o2.frequency);
     g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vel,t+.18);g.gain.linearRampToValueAtTime(vel*.8,t+dur*.5);g.gain.linearRampToValueAtTime(vel*1.05,t+dur*.85);g.gain.linearRampToValueAtTime(0,t+dur+.1);
     o.connect(g);o2.connect(g2);g2.connect(g);ns.connect(bp);bp.connect(ng);ng.connect(g);g.connect(master);g.connect(rev);
     [o,o2,ns,lfo].forEach(function(x){x.start(t);x.stop(t+dur+.2);});}
@@ -1602,10 +1599,12 @@ var DBGM=(function(){
     p.forEach(function(x){var tt=t+x[0]*E8;if(x[1]==="덩"){kung(tt,x[2]);deok(tt,x[2]);}else if(x[1]==="쿵")kung(tt,x[2]);else deok(tt,x[2]);});}
   function jing(t){[[146.8,.06],[220.9,.035],[293.2,.03],[441,.015]].forEach(function(x,i){var o=ctx.createOscillator(),g=ctx.createGain();o.type="sine";o.frequency.setValueAtTime(x[0]*1.01,t);o.frequency.linearRampToValueAtTime(x[0],t+1.5);
     g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(x[1],t+.04);g.gain.exponentialRampToValueAtTime(.0004,t+7);o.connect(g);g.connect(master);g.connect(rev);o.start(t);o.stop(t+7.2);});}
+  var UP={"-12":-10,"-5":-3,"0":2,"2":5,"5":7,"7":9,"9":12,"12":14,"14":17};
+  function grace(fn,st,tt,vel){var u=UP[String(st)];if(u===undefined)return 0;fn(u,tt,.11,vel*.55);return .1;}
   function playBar(t){var cyc=Math.floor(bar/8)%3,b=bar%8,i,x,tt;
     if(b===0)jing(t);janggu(t);
-    if(cyc===0||cyc===2){tt=t;for(i=0;i<A[b].length;i++){x=A[b][i];gayageum(x[0]+(cyc===2&&x[0]<12?12:0),tt,x[1]*E8,cyc===2?.22:.32,x[2]);tt+=x[1]*E8;}}
-    if(cyc===1||cyc===2){tt=t;for(i=0;i<D[b].length;i++){x=D[b][i];daegeum(x[0]-12+12,tt,x[1]*E8,cyc===2?.07:.1,x[2]);tt+=x[1]*E8;}}
+    if(cyc===0||cyc===2){tt=t;for(i=0;i<A[b].length;i++){x=A[b][i];var st=x[0]+(cyc===2&&x[0]<12?12:0),vv=cyc===2?.22:.32,gr=x[2]==="k"?grace(gayageum,st,tt,vv):0;gayageum(st,tt+gr,x[1]*E8-gr,vv,x[2]);tt+=x[1]*E8;}}
+    if(cyc===1||cyc===2){tt=t;for(i=0;i<D[b].length;i++){x=D[b][i];var dv=cyc===2?.07:.1,dg=x[2]==="k"?grace(daegeum,x[0],tt,dv):0;daegeum(x[0],tt+dg,x[1]*E8-dg,dv,x[2]);tt+=x[1]*E8;}}
     if(cyc===1){gayageum(-12,t,6*E8,.22);gayageum(-5,t+6*E8,6*E8,.16);}     // 대금 뒤 받침: 낮은 황·임
     dr.gain.setTargetAtTime(b===7?.6:1,t,1.5);
     bar++;}
