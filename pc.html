@@ -1550,37 +1550,69 @@ var DGUARD=(function(){
 })();
 </script>
 <script>
-/* 옛 가락 — Web Audio로 그 자리에서 짓는 배경음. 평조 다섯 음, 뜯는 현, 낮은 북, 먼 징. */
+/* 옛 가락 — Web Audio로 그 자리에서 짓는 배경음. 평조(황·태·중·임·남), 굿거리 장단.
+   가야금(뜯는 현, 꺾는 소리·농현) · 대금(숨 섞인 긴 소리, 떠는 소리) · 장구 · 징 · 낮은 아쟁 지속음.
+   여덟 장단이 한 바퀴: 1바퀴 가야금 가락 → 2바퀴 대금 가락 + 가야금 받침 → 3바퀴 둘이 함께(가야금 한 옥타브 위 변주) */
 var DBGM=(function(){
-  var ctx,master,on=false,timer,convolver,drone,step=0,lastN=2;
-  var SCALE=[311.13,349.23,415.30,466.16,523.25,622.25,698.46,830.61];  // 황 태 중 임 남 (Eb F Ab Bb C) 두 옥타브
-  function mk(){ctx=new (window.AudioContext||window.webkitAudioContext)();master=ctx.createGain();master.gain.value=0;
-    convolver=ctx.createConvolver();var len=ctx.sampleRate*2.2,ir=ctx.createBuffer(2,len,ctx.sampleRate);
-    for(var c=0;c<2;c++){var d=ir.getChannelData(c);for(var i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,2.6)*.5;}
-    convolver.buffer=ir;var wet=ctx.createGain();wet.gain.value=.55;convolver.connect(wet);wet.connect(master);master.connect(ctx.destination);
-    drone=ctx.createOscillator();drone.type="sine";drone.frequency.value=77.78;var dg=ctx.createGain();dg.gain.value=.05;drone.connect(dg);dg.connect(master);drone.start();}
-  function pluck(f,t,vel,dur){var o=ctx.createOscillator(),o2=ctx.createOscillator(),g=ctx.createGain(),lp=ctx.createBiquadFilter();
-    o.type="triangle";o2.type="sine";o.frequency.value=f;o2.frequency.value=f*2.01;lp.type="lowpass";lp.frequency.setValueAtTime(2600,t);lp.frequency.exponentialRampToValueAtTime(500,t+dur);
-    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vel,t+.012);g.gain.exponentialRampToValueAtTime(.001,t+dur);
-    var g2=ctx.createGain();g2.gain.value=.25;o.connect(lp);o2.connect(g2);g2.connect(lp);lp.connect(g);g.connect(master);g.connect(convolver);
-    o.start(t);o2.start(t);o.stop(t+dur+.05);o2.stop(t+dur+.05);
-    // 농현: 끝에서 살짝 흔들림
-    o.frequency.setValueAtTime(f,t);o.frequency.linearRampToValueAtTime(f*1.012,t+dur*.6);o.frequency.linearRampToValueAtTime(f,t+dur);}
-  function drum(t,vel){var b=ctx.createBuffer(1,ctx.sampleRate*.3,ctx.sampleRate),d=b.getChannelData(0);for(var i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,4);
-    var s=ctx.createBufferSource();s.buffer=b;var lp=ctx.createBiquadFilter();lp.type="lowpass";lp.frequency.value=180;var g=ctx.createGain();g.gain.setValueAtTime(vel,t);g.gain.exponentialRampToValueAtTime(.001,t+.3);
-    s.connect(lp);lp.connect(g);g.connect(master);g.connect(convolver);s.start(t);}
-  function gong(t){[155.56,233.08,311.13,466.16].forEach(function(f,i){var o=ctx.createOscillator(),g=ctx.createGain();o.type="sine";o.frequency.value=f*(1+i*.003);
-    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.05/(i+1),t+.02);g.gain.exponentialRampToValueAtTime(.0005,t+5);o.connect(g);g.connect(master);g.connect(convolver);o.start(t);o.stop(t+5.2);});}
-  function phrase(){if(!on)return;var t=ctx.currentTime+.05,beat=.86;
-    for(var i=0;i<8;i++){var dur=[1,1,1.5,.5,2,1,1,1][i]*beat;
-      if(Math.random()<.82){var mv=[-2,-1,-1,0,1,1,2][Math.floor(Math.random()*7)];lastN=Math.max(0,Math.min(SCALE.length-1,lastN+mv));
-        pluck(SCALE[lastN],t,.11+Math.random()*.06,dur*1.6);if(Math.random()<.25)pluck(SCALE[Math.max(0,lastN-3)],t+.02,.05,dur);}
-      if(i===0)drum(t,.5);if(i===4)drum(t,.3);
-      t+=dur;}
-    step++;if(step%4===3)gong(t-beat);
-    timer=setTimeout(phrase,(t-ctx.currentTime-.1)*1000);}
-  function start(){if(!ctx)mk();if(ctx.state==="suspended")ctx.resume();on=true;master.gain.cancelScheduledValues(ctx.currentTime);master.gain.linearRampToValueAtTime(.9,ctx.currentTime+2);phrase();}
-  function stop(){on=false;clearTimeout(timer);if(master){master.gain.cancelScheduledValues(ctx.currentTime);master.gain.linearRampToValueAtTime(0,ctx.currentTime+1.2);}}
+  var ctx,master,rev,on=false,timer,bar=0,next=0,KS={},dr=null;
+  var E8=.29;                                   // 8분음 하나(초). 한 장단 = 12개 ≈ 3.5초
+  var B=311.13;                                  // 황(Eb4)
+  function hz(st){return B*Math.pow(2,st/12)}
+  // 가락: [반음, 8분음 수, 꾸밈] — 0 황 2 태 5 중 7 임 9 남 12 청황 14 청태 / -5 하임 -3 하남
+  var A=[[[7,6],[9,3],[7,3]],[[5,6,"k"],[2,6]],[[5,3],[7,3],[9,3],[12,3]],[[9,6,"k"],[7,6]],
+         [[12,6],[14,3],[12,3]],[[9,6,"n"],[7,3],[5,3]],[[2,3],[5,3],[7,6]],[[0,12,"n"]]];
+  var D=[[[12,9,"n"],[9,3]],[[7,12,"k"]],[[9,6],[12,6]],[[14,9,"n"],[12,3]],
+         [[9,6],[7,3],[9,3]],[[12,6,"k"],[9,6]],[[7,9,"n"],[5,3]],[[0,12,"n"]]];
+  function mk(){ctx=new (window.AudioContext||window.webkitAudioContext)();master=ctx.createGain();master.gain.value=0;master.connect(ctx.destination);
+    rev=ctx.createConvolver();var len=ctx.sampleRate*3,ir=ctx.createBuffer(2,len,ctx.sampleRate);
+    for(var c=0;c<2;c++){var d=ir.getChannelData(c);for(var i=0;i<len;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/len,3)*.45;}
+    rev.buffer=ir;var wet=ctx.createGain();wet.gain.value=.42;rev.connect(wet);wet.connect(master);
+    // 아쟁 지속음: 낮은 황과 임, 아주 느리게 숨 쉰다
+    dr=ctx.createGain();dr.gain.value=0;var lp=ctx.createBiquadFilter();lp.type="lowpass";lp.frequency.value=320;lp.Q.value=.4;lp.connect(dr);dr.connect(master);dr.connect(rev);
+    [[hz(-24),.5],[hz(-17),.32],[hz(-24)*1.004,.35]].forEach(function(x){var o=ctx.createOscillator();o.type="sawtooth";o.frequency.value=x[0];var g=ctx.createGain();g.gain.value=x[1]*.05;o.connect(g);g.connect(lp);o.start();});
+    var lfo=ctx.createOscillator(),lg=ctx.createGain();lfo.frequency.value=.07;lg.gain.value=.25;lfo.connect(lg);lg.connect(dr.gain);lfo.start();}
+  // 가야금: 카플러스-스트롱으로 미리 지은 줄 소리
+  function ks(st){if(KS[st])return KS[st];var sr=ctx.sampleRate,f=hz(st),N=Math.round(sr/f),len=Math.floor(sr*3.2),b=ctx.createBuffer(1,len,sr),d=b.getChannelData(0),buf=new Float32Array(N),i;
+    for(i=0;i<N;i++)buf[i]=Math.random()*2-1;for(i=1;i<N;i++)buf[i]=(buf[i]+buf[i-1])*.5;   // 손가락으로 뜯은 듯 부드럽게
+    var damp=st>10?.9935:.9965;for(i=0;i<len;i++){var j=i%N,v=buf[j];d[i]=v;buf[j]=damp*.5*(v+buf[(j+1)%N]);}
+    return KS[st]=b;}
+  function gayageum(st,t,dur,vel,orn){var s=ctx.createBufferSource();s.buffer=ks(st);var g=ctx.createGain(),lp=ctx.createBiquadFilter();lp.type="lowpass";lp.frequency.value=3200;
+    g.gain.setValueAtTime(vel,t);g.gain.setTargetAtTime(0,t+dur*1.4,.35);s.connect(lp);lp.connect(g);g.connect(master);g.connect(rev);
+    var pr=s.playbackRate;pr.setValueAtTime(1,t);
+    if(orn==="k"){pr.setValueAtTime(1,t+dur*.45);pr.linearRampToValueAtTime(1.06,t+dur*.6);pr.linearRampToValueAtTime(.985,t+dur*.85);}       // 꺾는 소리: 눌러 올렸다 떨어뜨림
+    else if(orn==="n"){var n=Math.max(2,Math.floor(dur/0.32)),c=new Float32Array(n*8);for(var i=0;i<c.length;i++){var a=i/c.length;c[i]=1+Math.sin(a*n*2*Math.PI)*.012*a;}pr.setValueCurveAtTime(c,t+dur*.3,dur*.7);} // 농현: 갈수록 깊게
+    s.start(t);s.stop(t+dur*1.4+2);}
+  // 대금: 숨 섞인 긴 소리, 뒤로 갈수록 떤다
+  function daegeum(st,t,dur,vel,orn){var f=hz(st),o=ctx.createOscillator(),o2=ctx.createOscillator(),g=ctx.createGain(),g2=ctx.createGain();o.type="sine";o2.type="triangle";o.frequency.value=f;o2.frequency.value=f*2;g2.gain.value=.12;
+    var nb=ctx.createBuffer(1,ctx.sampleRate*2,ctx.sampleRate),nd=nb.getChannelData(0);for(var i=0;i<nd.length;i++)nd[i]=Math.random()*2-1;
+    var ns=ctx.createBufferSource();ns.buffer=nb;ns.loop=true;var bp=ctx.createBiquadFilter();bp.type="bandpass";bp.frequency.value=f*2;bp.Q.value=6;var ng=ctx.createGain();ng.gain.value=.16;
+    var lfo=ctx.createOscillator(),lg=ctx.createGain();lfo.frequency.value=5.2;lg.gain.setValueAtTime(0,t);lg.gain.linearRampToValueAtTime(0,t+dur*.4);lg.gain.linearRampToValueAtTime(f*(orn==="n"?.018:.008),t+dur);lfo.connect(lg);lg.connect(o.frequency);lg.connect(o2.frequency);
+    if(orn==="k"){o.frequency.setValueAtTime(f,t+dur*.55);o.frequency.linearRampToValueAtTime(f*1.06,t+dur*.68);o.frequency.linearRampToValueAtTime(f*.99,t+dur*.85);}
+    else{o.frequency.setValueAtTime(f*.97,t);o.frequency.linearRampToValueAtTime(f,t+.12);}   // 밀어 올리며 들어감
+    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(vel,t+.18);g.gain.linearRampToValueAtTime(vel*.8,t+dur*.5);g.gain.linearRampToValueAtTime(vel*1.05,t+dur*.85);g.gain.linearRampToValueAtTime(0,t+dur+.1);
+    o.connect(g);o2.connect(g2);g2.connect(g);ns.connect(bp);bp.connect(ng);ng.connect(g);g.connect(master);g.connect(rev);
+    [o,o2,ns,lfo].forEach(function(x){x.start(t);x.stop(t+dur+.2);});}
+  function hit(t,f,q,dur,vel,noise){var src;if(noise){var b=ctx.createBuffer(1,ctx.sampleRate*dur,ctx.sampleRate),d=b.getChannelData(0);for(var i=0;i<d.length;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/d.length,5);src=ctx.createBufferSource();src.buffer=b;}
+    else{src=ctx.createOscillator();src.type="sine";src.frequency.setValueAtTime(f*1.6,t);src.frequency.exponentialRampToValueAtTime(f,t+.06);}
+    var fl=ctx.createBiquadFilter();fl.type=noise?"bandpass":"lowpass";fl.frequency.value=noise?f:400;fl.Q.value=q;var g=ctx.createGain();g.gain.setValueAtTime(vel,t);g.gain.exponentialRampToValueAtTime(.001,t+dur);
+    src.connect(fl);fl.connect(g);g.connect(master);g.connect(rev);src.start(t);src.stop(t+dur+.05);}
+  function kung(t,v){hit(t,72,1,.45,v*.9,false);}          // 쿵(북편)
+  function deok(t,v){hit(t,2400,2.5,.12,v*.5,true);}       // 덕(채편)
+  function janggu(t){var p=[[0,"덩",.5],[3,"쿵",.3],[5,"기",.12],[6,"덕",.25],[8,"기",.1],[9,"쿵",.28],[11,"기",.12]];   // 굿거리 한 장단(12)
+    p.forEach(function(x){var tt=t+x[0]*E8;if(x[1]==="덩"){kung(tt,x[2]);deok(tt,x[2]);}else if(x[1]==="쿵")kung(tt,x[2]);else deok(tt,x[2]);});}
+  function jing(t){[[146.8,.06],[220.9,.035],[293.2,.03],[441,.015]].forEach(function(x,i){var o=ctx.createOscillator(),g=ctx.createGain();o.type="sine";o.frequency.setValueAtTime(x[0]*1.01,t);o.frequency.linearRampToValueAtTime(x[0],t+1.5);
+    g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(x[1],t+.04);g.gain.exponentialRampToValueAtTime(.0004,t+7);o.connect(g);g.connect(master);g.connect(rev);o.start(t);o.stop(t+7.2);});}
+  function playBar(t){var cyc=Math.floor(bar/8)%3,b=bar%8,i,x,tt;
+    if(b===0)jing(t);janggu(t);
+    if(cyc===0||cyc===2){tt=t;for(i=0;i<A[b].length;i++){x=A[b][i];gayageum(x[0]+(cyc===2&&x[0]<12?12:0),tt,x[1]*E8,cyc===2?.22:.32,x[2]);tt+=x[1]*E8;}}
+    if(cyc===1||cyc===2){tt=t;for(i=0;i<D[b].length;i++){x=D[b][i];daegeum(x[0]-12+12,tt,x[1]*E8,cyc===2?.07:.1,x[2]);tt+=x[1]*E8;}}
+    if(cyc===1){gayageum(-12,t,6*E8,.22);gayageum(-5,t+6*E8,6*E8,.16);}     // 대금 뒤 받침: 낮은 황·임
+    dr.gain.setTargetAtTime(b===7?.6:1,t,1.5);
+    bar++;}
+  function sched(){if(!on)return;while(next<ctx.currentTime+1.2){playBar(next);next+=12*E8;}timer=setTimeout(sched,300);}
+  function start(){if(!ctx)mk();if(ctx.state==="suspended")ctx.resume();on=true;master.gain.cancelScheduledValues(ctx.currentTime);master.gain.setValueAtTime(master.gain.value,ctx.currentTime);master.gain.linearRampToValueAtTime(.85,ctx.currentTime+2.5);
+    if(next<ctx.currentTime)next=ctx.currentTime+.1;sched();}
+  function stop(){on=false;clearTimeout(timer);if(master){master.gain.cancelScheduledValues(ctx.currentTime);master.gain.setValueAtTime(master.gain.value,ctx.currentTime);master.gain.linearRampToValueAtTime(0,ctx.currentTime+1.2);}}
   function toggle(){on?stop():start();return on;}
   document.addEventListener("visibilitychange",function(){if(document.hidden&&on){stop();on=true;}else if(!document.hidden&&on){start();}});
   return {toggle:toggle,isOn:function(){return on}};
